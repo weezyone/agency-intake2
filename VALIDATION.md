@@ -8,9 +8,10 @@ Environment: Windows, Node.js 24.21.0, temporary MongoDB 8.2.6, pinned dependenc
 - Strict TDD red → green evidence was captured outside the repository for revision preservation, replay/conflicts, immutable QA notes/attribution, runner context, concurrent duplicates, the 20-revision bound, provider-input isolation, CLI revise/show/review, and actual adapter protocol payload/instructions.
 - Additional regression tests for failed retry, expired revision fencing, access/legacy/accepted-state safeguards, and concurrent conflicts passed immediately against those slices; they are not claimed as new red → green cycles.
 - Temporary-server fixtures omit the unsupported `--nounixsocket` option on Windows. Research fixture launch waits are bounded; occasional startup timeouts during development were environmental, not model failures.
-- `npm test`: 42 passed, 0 failed, 0 skipped (full suite).
+- Final `npm test`: 44 passed, 0 failed, 0 skipped (full suite, after review fixes).
 - `npm run typecheck -- --pretty false`: passed.
 - `git diff --check`: passed.
+- Final independent review against pinned main: Standards — 0 findings. Spec — 1 high-severity finding, fixed: a post-publication read could return a successor revision instead of the requested artifact. A public-read interleaving test reproduced `3 !== 2` against real temporary MongoDB, then passed after binding the response to its published hash. Replay/review/publication now share one pure revision projection. No unresolved review finding remains. A subsequent size-bound check found URL metadata could bypass text-only limits through the public service. A separate red → green test now verifies the normalized 512 KB packet limit rejects oversized metadata before archiving or calling the provider.
 
 The public-service tests use real temporary MongoDB with deterministic runners and clock-controlled stale-worker recovery. CLI tests call `runResearchCommand`, not a live `.env`-loading CLI process. The actual Mastra adapter is tested through a local OpenAI-compatible server in prompt and schema modes; protocol responses and token counts are synthetic. Tests verify context delivery and prompt instructions, not whether a live model follows them. Quote validation establishes supplied-packet membership only, not URL provenance, external accuracy, or human judgment.
 

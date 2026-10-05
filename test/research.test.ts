@@ -78,6 +78,37 @@ test('revision replays return the same artifact without another execution and re
   assert.equal((await service.get(actor, id)).artifactHash, third.artifactHash);
 });
 
+test('publication responses stay bound to their request when human review starts a successor before the final read', async t => {
+  const { run, service } = await setup('research-publication-response');
+  const id = run.assignments[0].id;
+  const first = await service.execute(actor, run.runId, id, packet, async () => output);
+  await service.review(actor, id, { artifactHash: first.artifactHash, accepted: false, notes: 'Clarify the original report using the approved evidence.' });
+  const worker = new ResearchService(client.db('research-publication-response'));
+  const read = worker.get.bind(worker);
+  let publishedHash: string | undefined;
+  // Delay the public read until another operator has reviewed and revised the published report.
+  t.mock.method(worker, 'get', async (principal: unknown, assignmentId: string) => {
+    const job = await read(principal, assignmentId);
+    if (job.revision !== 2 || job.status !== 'awaiting_qa') return job;
+    publishedHash = job.artifactHash;
+    await service.review(actor, id, { artifactHash: job.artifactHash, accepted: false, notes: 'One further explicit revision is needed after inspection.' });
+    await service.revise(actor, run.runId, id, { artifactHash: job.artifactHash, packet }, async () => ({ ...output, summary: 'The successor report must not replace the previous request response.' }));
+    return read(principal, assignmentId);
+  });
+  let calls = 0;
+  const request = { artifactHash: first.artifactHash, packet };
+  const result = await worker.revise(actor, run.runId, id, request, async () => { calls++; return output; });
+  assert.equal(result.revision, 2);
+  assert.equal(result.artifactHash, publishedHash);
+  assert.deepEqual(result.artifact, output);
+  assert.equal(result.history.length, 1);
+  assert.equal(result.request?.artifactHash, first.artifactHash);
+  const replay = await service.revise(actor, run.runId, id, request, async () => { calls++; return output; });
+  assert.deepEqual(replay, result);
+  assert.equal(calls, 1);
+  assert.equal((await service.get(actor, id)).revision, 3);
+});
+
 test('QA replay preserves exact notes and reviewer attribution, including archived revisions', async () => {
   const { run, service } = await setup('research-qa-history');
   const id = run.assignments[0].id;
@@ -139,6 +170,18 @@ test('revision history is bounded without deleting or reopening any saved report
   await assert.rejects(service.revise(actor, run.runId, id, { artifactHash: job.artifactHash, packet }, async () => output), /revision limit/i);
   assert.deepEqual(await service.get(actor, id), job);
   assert.equal(job.history.length, 19);
+});
+
+test('revision history rejects unbounded source URL metadata before archiving or calling a provider', async () => {
+  const { run, service } = await setup('research-revision-url-bound');
+  const id = run.assignments[0].id;
+  const first = await service.execute(actor, run.runId, id, packet, async () => output);
+  const rejected = await service.review(actor, id, { artifactHash: first.artifactHash, accepted: false, notes: 'Check corrected source references before revising the report.' });
+  let calls = 0;
+  const oversizedPacket = { sources: [{ ...packet.sources[0], url: 'https://example.com/' + 'a'.repeat(512_000) }] };
+  await assert.rejects(service.revise(actor, run.runId, id, { artifactHash: first.artifactHash, packet: oversizedPacket }, async () => { calls++; return output; }), /512 KB/);
+  assert.equal(calls, 0);
+  assert.deepEqual(await service.get(actor, id), rejected);
 });
 
 test('runner mutation cannot change the immutable evidence used for citation checks', async () => {

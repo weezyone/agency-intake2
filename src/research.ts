@@ -18,6 +18,9 @@ export type ResearchJob = Omit<ResearchRevision, 'revision'> & { _id: string; te
   revision?: number; history?: ResearchRevision[]; token?: string; leaseUntil?: Date };
 const snapshot = ({ revision, status, sourceHash, packet, artifact, artifactHash, citationsChecked, qa, request }: ResearchRevision): ResearchRevision =>
   ({ revision, status, sourceHash, packet, artifact, artifactHash, citationsChecked, qa, ...(request ? { request } : {}) });
+const revisionView = (job: ResearchJob & { revision: number; history: ResearchRevision[] }, target: ResearchRevision) =>
+  target.revision === job.revision ? job : { _id: job._id, tenantId: job.tenantId, runId: job.runId, planHash: job.planHash,
+    ...target, history: job.history.filter(r => r.revision < target.revision) };
 
 export class ResearchService {
   private readonly jobs: Collection<ResearchJob>;
@@ -74,8 +77,7 @@ export class ResearchService {
     }
     const target = rejectedHash ? [...job.history, job].find(r => r.request?.artifactHash === rejectedHash) : job.history[0] ?? job;
     if (!target || target.sourceHash !== sourceHash) throw new Error('Research input conflict');
-    if (target.revision !== job.revision) return { _id: job._id, tenantId: job.tenantId, runId: job.runId, planHash: job.planHash,
-      ...target, history: job.history.filter(r => r.revision < target.revision) };
+    if (target.revision !== job.revision) return revisionView(job, target);
     if (job.artifact) return job;
     const token = randomUUID();
     const claimed = await this.jobs.updateOne({ _id: assignmentId, tenantId: actor.tenantId, sourceHash,
@@ -95,7 +97,10 @@ export class ResearchService {
       const saved = await this.jobs.updateOne({ _id: assignmentId, tenantId: actor.tenantId, status: 'running', token },
         { $set: { artifact, artifactHash, citationsChecked, status: 'awaiting_qa' }, $unset: { token: '', leaseUntil: '' } });
       if (!saved.modifiedCount) throw new Error('Research lease lost; result discarded');
-      return this.get(actor, assignmentId);
+      const current = await this.get(actor, assignmentId);
+      const published = [...current.history, current].find(r => r.artifactHash === artifactHash);
+      if (!published) throw new Error('Published research artifact not found');
+      return revisionView(current, published);
     } catch (error) {
       await this.jobs.updateOne({ _id: assignmentId, tenantId: actor.tenantId, status: 'running', token },
         { $set: { status: 'failed' }, $unset: { token: '', leaseUntil: '' } });
@@ -116,7 +121,6 @@ export class ResearchService {
     if (!reviewed?.qa || reviewed.qa.accepted !== input.accepted || reviewed.qa.notes !== input.notes || reviewed.qa.userId !== actor.userId) {
       throw new Error('QA decision conflict');
     }
-    return reviewed.revision === current.revision ? current : { _id: current._id, tenantId: current.tenantId,
-      runId: current.runId, planHash: current.planHash, ...reviewed, history: current.history.filter(r => r.revision < reviewed.revision) };
+    return revisionView(current, reviewed);
   }
 }

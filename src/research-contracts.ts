@@ -5,7 +5,8 @@ const sourceSchema = z.object({ id: z.string().regex(/^[a-z0-9_-]{1,40}$/),
   retrievedAt: z.iso.datetime(), text: z.string().trim().min(20).max(16_000) }).strict();
 export const packetSchema = z.object({ sources: z.array(sourceSchema).min(1).max(8) }).strict()
   .refine(p => new Set(p.sources.map(s => s.id)).size === p.sources.length, 'Unique source IDs required')
-  .refine(p => p.sources.reduce((n, s) => n + s.text.length, 0) <= 60_000, 'Source packet too large');
+  .refine(p => p.sources.reduce((n, s) => n + s.text.length, 0) <= 60_000, 'Source packet too large')
+  .refine(p => Buffer.byteLength(JSON.stringify(p)) <= 512_000, 'Source packet exceeds 512 KB');
 export const researchSchema = z.object({ summary: z.string().trim().min(20).max(4000),
   findings: z.array(z.object({ claim: z.string().trim().min(10).max(1000),
     citations: z.array(z.object({ sourceId: z.string().min(1).max(40), quote: z.string().trim().min(8).max(240) }).strict()).min(1).max(3),
