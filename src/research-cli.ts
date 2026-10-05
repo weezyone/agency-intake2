@@ -6,8 +6,8 @@ import { Repository } from './repository.js';
 import { ResearchService, type ResearchRunner } from './research.js';
 import { packetSchema } from './research-contracts.js';
 
-export const researchCommands = ['research-packet', 'research', 'research-show', 'research-review'];
-export const researchUsage = 'research-packet RUN_ID OUTPUT.json | research RUN_ID ASSIGNMENT_ID PACKET.json | research-show ASSIGNMENT_ID | research-review ASSIGNMENT_ID REVIEW.json';
+export const researchCommands = ['research-packet', 'research', 'research-revise', 'research-show', 'research-review'];
+export const researchUsage = 'research-packet RUN_ID OUTPUT.json | research RUN_ID ASSIGNMENT_ID PACKET.json | research-revise RUN_ID ASSIGNMENT_ID REVISION.json | research-show ASSIGNMENT_ID | research-review ASSIGNMENT_ID REVIEW.json';
 export async function readJson(path: string) {
   if ((await stat(path)).size > 512_000) throw new Error('JSON input exceeds 512 KB');
   const text = await readFile(path, 'utf8');
@@ -19,7 +19,7 @@ export async function runResearchCommand(command: string, args: string[], contex
 }) {
   const actor = principalSchema.parse(context.principal);
   const service = new ResearchService(context.db);
-  const counts: Record<string, number> = { 'research-packet': 2, research: 3, 'research-show': 1, 'research-review': 2 };
+  const counts: Record<string, number> = { 'research-packet': 2, research: 3, 'research-revise': 3, 'research-show': 1, 'research-review': 2 };
   if (!Object.hasOwn(counts, command) || args.length !== counts[command] || args.some(a => !a)) throw new Error(researchUsage);
   const [first, second, third] = args;
   if (command === 'research-packet') {
@@ -35,6 +35,9 @@ export async function runResearchCommand(command: string, args: string[], contex
   }
   if (command === 'research-review') return service.review(actor, first, await readJson(second));
   if (!context.runner) throw new Error('Research runner is not configured');
-  const { token, leaseUntil, ...visible } = await service.execute(actor, first, second, await readJson(third), context.runner);
+  const body = await readJson(third);
+  const { token, leaseUntil, ...visible } = command === 'research-revise'
+    ? await service.revise(actor, first, second, body, context.runner)
+    : await service.execute(actor, first, second, body, context.runner);
   return visible;
 }

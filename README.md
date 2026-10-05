@@ -1,6 +1,6 @@
 # Agency Intake Prototype — v0.2.0
 
-Research worker update: see [RESEARCH.md](RESEARCH.md) for the new approved Research execution and human-review commands. Keep your working GLM-5.3 Flash configuration.
+Research worker update: see [RESEARCH.md](RESEARCH.md) for approved Research execution, immutable human QA, and explicit same-scope revisions with inspectable history. Use `research-revise RUN_ID ASSIGNMENT_ID REVISION.json` after `changes_requested`, `research-show ASSIGNMENT_ID` to inspect all revisions, and `research-review ASSIGNMENT_ID REVIEW.json` for each new human decision. Keep your working GLM-5.3 Flash configuration.
 
 A working TypeScript prototype of **client intake → Project Manager plan → human approval → queued specialist assignments**, built with Mastra and MongoDB.
 
@@ -76,7 +76,7 @@ npm run recovery-demo
 npm run compare
 ```
 
-`npm test` starts temporary MongoDB and verifies approval recovery, terminal rejection, stale plan hashes, tenant access checks, reviewer permission, strict schemas, query-object injection rejection, concurrent duplicate approvals, simulated partial dispatch recovery, and memory ID partitioning.
+`npm test` starts temporary MongoDB and verifies approval recovery, terminal rejection, stale plan hashes, tenant access checks, reviewer permission, strict schemas, query-object injection rejection, concurrent duplicate approvals, simulated partial dispatch recovery, and memory ID partitioning. Research tests additionally cover immutable revision history/QA, request replay and conflicts, retries and stale-worker fencing, revision limits, CLI commands, and approval/execution/rejection-feedback delivery through a local protocol server. These checks make no paid model calls and do not establish live report quality.
 
 `npm run benchmark` exercises 30 fixture cases and writes `results/fixture-benchmark.json`. This measures the test harness and persistence overhead; the fixture planner does not demonstrate model reasoning, quality, token consumption, observational memory, or production throughput. See `EXPERIMENT.md` for the live evaluation protocol.
 
@@ -94,14 +94,18 @@ npm run compare
 | `src/delivery.ts` | One bounded delivery attempt, validated receipt, retry-safe completion |
 | `src/delivery-contracts.ts` | Project request, receipt, and stable creation key |
 | `src/fake-destination.ts` | Persistent test destination with atomic deduplication |
+| `src/research.ts` | Approved Research execution, immutable human QA, explicit revisions/history and fenced retries |
+| `src/research-contracts.ts` | Bounded packet/report schemas, strict review/revision bodies, mechanical citations |
+| `src/research-cli.ts` | Research packet/execute/show/review/revise commands |
+| `src/researcher.ts` | Bounded Mastra Research adapter with explicit approval/execution/feedback context |
 
-The application writes its records to `agency_intakes`; Mastra manages its own workflow and memory collections in the same database.
+The application writes intake records to `agency_intakes` and Research jobs with revision history to `agency_research`; Mastra manages its own workflow and memory collections in the same database.
 
 Approval is bound to the validated plan's SHA-256 hash. Model output and workflow resume payloads cannot grant approval. The workflow checks the persisted human decision. A single conditional document update commits all assignments and `dispatched` status together. Assignment IDs are stable hashes of tenant, run, plan hash, and task position.
 
 That same update now writes `projectDelivery: { key, payloadHash, status: 'pending' }`. The worker receives a trusted operator principal, reloads the persisted approval, validates the plan and intent, and calls its destination. A matching receipt changes delivery status to `delivered`. `dispatched` still means assignments were queued; inspect `projectDelivery.status` for project creation.
 
-The stable creation key identifies tenant + project ID. Repeated intakes with the same approved plan recover one destination project. A changed proposal for an already-created project raises an idempotency conflict; editing an existing project requires a future explicit update operation. Specialist assignments remain scoped per intake run and are not executed by this prototype.
+The stable creation key identifies tenant + project ID. Repeated intakes with the same approved plan recover one destination project. A changed proposal for an already-created project raises an idempotency conflict; editing an existing project requires a future explicit update operation. Specialist assignments remain scoped per intake run. Only an explicitly requested approved Research assignment can execute; dispatch never starts it automatically. The assignment's `queued` field is dispatch bookkeeping, not the current Research state or evidence of missing intake approval. Intake approval does not imply client or implementation sign-off.
 
 ## Recovery and limits
 
@@ -113,7 +117,8 @@ The stable creation key identifies tenant + project ID. Repeated intakes with th
 - **Project delivery:** the worker makes one attempt per call. After an ambiguous failure, repeat delivery with the same intent. This is safe only with a destination implementing the documented durable idempotency contract. The included fake proves that contract locally; no real project-management service is integrated.
 - **Scope conflict:** do not retry under a new creation key to bypass the conflict. Review the existing project and implement a separately authorized update operation.
 - **Existing 0.1 records:** dispatched records from the earlier release have no project-delivery intent. This release does not backfill them or retroactively create projects; use a fresh development database for the demonstration.
-- **Specialist execution:** assignments remain queued; no specialist worker, scheduler, or external messaging is connected.
+- **Research revisions:** after immutable human `changes_requested`, explicitly submit a full packet bound to that rejected artifact hash. The same request replays or retries its own revision; conflicting evidence cannot replace it. Accepted reports stay terminal, history is retained (20 revisions total), and changed scope still requires a new approved intake. See [RESEARCH.md](RESEARCH.md) for exact commands and limits.
+- **Specialist execution:** Research alone has an explicit worker. No automatic scheduler, other specialist execution, external messaging, or engineering release is connected.
 - New `start` commands intentionally create new runs. HTTP request deduplication, project-level access control, retention/export/deletion, deployment, and production monitoring remain future work.
 
 ## Versions and evidence

@@ -11,6 +11,7 @@ export const researchSchema = z.object({ summary: z.string().trim().min(20).max(
     citations: z.array(z.object({ sourceId: z.string().min(1).max(40), quote: z.string().trim().min(8).max(240) }).strict()).min(1).max(3),
   }).strict()).min(1).max(8), limitations: z.array(z.string().trim().min(10).max(500)).min(1).max(8),
 }).strict();
+export const revisionSchema = z.object({ artifactHash: hashSchema, packet: packetSchema }).strict();
 export type Packet = z.infer<typeof packetSchema>;
 export type Research = z.infer<typeof researchSchema>;
 export const reviewSchema = z.object({ artifactHash: hashSchema, accepted: z.boolean(), notes: z.string().trim().min(10).max(2000) }).strict();

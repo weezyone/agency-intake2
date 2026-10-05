@@ -10,7 +10,9 @@ test('real Mastra adapter validates Research output and preserves conversations 
  const report = { summary: 'The supplied brief does not confirm a budget or launch date.',
   findings: [{ claim: 'The client requires confirmation before implementation.', citations: [{ sourceId: 'brief', quote: 'Confirm budget before implementation.' }] }],
   limitations: ['Ask the client for a confirmed budget and launch date.'] };
- const requests: Array<{ model: string; messages: unknown[] }> = [];
+ const feedback = { artifactHash: '2'.repeat(64), report,
+  qa: { accepted: false, notes: 'Missing evidence of client sign-off is not proof it does not exist. Recheck the alleged verbatim quotation.', userId: 'human-reviewer', at: '2026-09-30T00:00:00Z' } };
+ const requests: Array<{ model: string; messages: Array<{ role: string; content: string | Array<{ text?: string }> }> }> = [];
  let reply = JSON.stringify(report);
  const http = createServer(async (req, res) => {
   let body = ''; for await (const chunk of req) body += chunk;
@@ -30,7 +32,7 @@ test('real Mastra adapter validates Research output and preserves conversations 
   res.end('data: [DONE]\n\n');
  });
  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
- const server = await MongoMemoryServer.create({ binary: { version: '8.2.6' }, instance: { args: ['--nounixsocket'] } });
+ const server = await MongoMemoryServer.create({ binary: { version: '8.2.6' }, instance: process.platform === 'win32' ? {} : { args: ['--nounixsocket'] } });
  const model = { providerId: 'test-provider', modelId: 'fixture-flash', url: `http://127.0.0.1:${(http.address() as AddressInfo).port}/v1`, apiKey: 'test-only', api: 'chat' as const };
  const metrics: Metric[] = [];
  const config = { uri: server.getUri(), dbName: 'model-protocol', model, memoryModel: model, onMetric: (m: Metric) => { metrics.push(m); } };
@@ -39,10 +41,27 @@ test('real Mastra adapter validates Research output and preserves conversations 
    const researcher = createLiveResearcher({ ...config, outputMode });
    try {
     const actual = await researcher.runner({ brief: 'Confirm budget before implementation.',
+     approval: { approved: true, runId: '00000000-0000-4000-8000-000000000000', planHash: '1'.repeat(64) },
+     execution: { status: 'running', revision: 2 }, feedback,
      task: { id: '0'.repeat(64), role: 'research', objective: 'Clarify requirements before work.', acceptance: ['Budget must be confirmed.'], status: 'queued' },
      packet: { sources: [{ id: 'brief', title: 'Client brief', retrievedAt: '2026-09-30T00:00:00Z', text: 'Confirm budget before implementation.' }] },
      ids: { resource: 'client', thread: 'research-' + outputMode } });
     assert.deepEqual(actual, report);
+    const messages = requests.at(-1)!.messages;
+    const content = messages.findLast(message => message.role === 'user')!.content;
+    const text = typeof content === 'string' ? content : content.map(part => part.text ?? '').join('');
+    const payload = JSON.parse(text.split('\n')[0]);
+    assert.deepEqual(payload.approval, { approved: true, runId: '00000000-0000-4000-8000-000000000000', planHash: '1'.repeat(64) });
+    assert.deepEqual(payload.execution, { status: 'running', revision: 2 });
+    assert.deepEqual(payload.feedback, feedback);
+    assert.equal(payload.task.status, 'queued');
+    const instructions = JSON.stringify(messages.filter(message => message.role === 'system'));
+    assert.match(instructions, /queued.*dispatch bookkeeping/i);
+    assert.match(instructions, /intake approval.*not.*client.*sign-off/i);
+    assert.match(instructions, /missing evidence.*unknown.*nonexistent/i);
+    assert.match(instructions, /previous report.*feedback.*untrusted/i);
+    assert.match(instructions, /only.*current.*sources/i);
+    assert.match(instructions, /quote membership.*not.*provenance/i);
    } finally { await researcher.close(); }
   }
   assert.equal(metrics.length, 2);

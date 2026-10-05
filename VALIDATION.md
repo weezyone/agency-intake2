@@ -1,5 +1,21 @@
 # Validation record
 
+## Research revision workflow
+
+Environment: Windows, Node.js 24.21.0, temporary MongoDB 8.2.6, pinned dependencies. No live database, paid model, or `.env` credentials were accessed. Existing result files are unchanged.
+
+- Baseline Research/CLI/adapter selectors: 8 passed. Dependencies were restored from the unchanged lockfile only after the initial missing-dependency failure.
+- Strict TDD red → green evidence was captured outside the repository for revision preservation, replay/conflicts, immutable QA notes/attribution, runner context, concurrent duplicates, the 20-revision bound, provider-input isolation, CLI revise/show/review, and actual adapter protocol payload/instructions.
+- Additional regression tests for failed retry, expired revision fencing, access/legacy/accepted-state safeguards, and concurrent conflicts passed immediately against those slices; they are not claimed as new red → green cycles.
+- Temporary-server fixtures omit the unsupported `--nounixsocket` option on Windows. Research fixture launch waits are bounded; occasional startup timeouts during development were environmental, not model failures.
+- `npm test`: 42 passed, 0 failed, 0 skipped (full suite).
+- `npm run typecheck -- --pretty false`: passed.
+- `git diff --check`: passed.
+
+The public-service tests use real temporary MongoDB with deterministic runners and clock-controlled stale-worker recovery. CLI tests call `runResearchCommand`, not a live `.env`-loading CLI process. The actual Mastra adapter is tested through a local OpenAI-compatible server in prompt and schema modes; protocol responses and token counts are synthetic. Tests verify context delivery and prompt instructions, not whether a live model follows them. Quote validation establishes supplied-packet membership only, not URL provenance, external accuracy, or human judgment.
+
+Revisions remain within the same approved assignment, retain immutable rejected reports/QA, and require a new human decision. There is no automatic provider retry, specialist scheduling, implementation authorization, or acceptance. Expired-lease recovery can incur another provider charge; exactly-once billing is not promised. See [RESEARCH.md](RESEARCH.md) for request identity, history, retry commands, terminal acceptance, and the 20-revision limit. Corrected live evidence and human report QA remain separate operator work.
+
 ## Research worker branch — 2026-09-30
 
 - Clean `npm ci --ignore-scripts` succeeded against the existing lockfile; no dependency changes.
